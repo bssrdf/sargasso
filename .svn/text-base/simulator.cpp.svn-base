@@ -1,0 +1,905 @@
+/* The main driver for simulation */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <vector>
+#include <map>
+using std::vector;
+using std::map;
+
+//#include <omp.h>
+#ifdef SPMDMPI
+#include "mpiutilities.h"
+#endif
+#include "geometry.h"
+#include "voxel.h"
+#include "particle.h"
+#include "scalarfield3d.h"
+#include "vectorfield3d.h"
+#include "spheremovingobj.h"
+#include "cylindricalmovingobj.h"
+#include "cubesource.h"
+#include "cylindricalsource.h"
+#include "blendparticles.h"
+#include "cubecontainer.h"
+#include "signeddistancecontainer.h"
+#include "cylindricalcontainer.h"
+#include "physicsworld.h"
+#include "renderlevelset.h"
+#include "wavegenerator.h"
+
+#ifdef COUPLED_FLIP
+#include "flip.h"
+#endif
+
+void SpecifyVolume(int start_x0, int start_y0, int start_z0,
+				   int end_x0, int end_y0, int end_z0,
+				   int nPerVoxel, const Voxel &voxel,
+				   vector<Particle> &particles);
+float ComputeSPHWeights(const Voxel &voxel, list<Particle> &sph, int i, int j, int k,
+						float radiusSquared, float influenceRadius);
+
+int main(int argc, char ** argv){
+
+	int nx, ny, nz;
+
+	int nPerVoxel;
+
+	int I, J, K;
+
+	float dt;
+	float delta;
+	float g;
+	int steps;
+	float st_time, en_time;
+
+	int restart, restart_step;
+	int restart_freq;
+	int movingobj = 0;
+	bool hasmovingobj = false;
+
+//	char objectfile[] = "cylinder_container";
+	char objectfile[] = "cube_container";
+
+	char initial_phi[] = "initial_phi";
+#ifdef SPMDMPI
+	int pex = atoi(argv[1]);
+	int pey = atoi(argv[2]);
+	nx = atoi(argv[3]);
+	ny = atoi(argv[4]);
+	nz = atoi(argv[5]);
+	dt = atof(argv[6]);
+	g =  atof(argv[7]);
+	delta = atof(argv[8]);
+	nPerVoxel = atoi(argv[9]);
+	I = atoi(argv[10]);
+	J = atoi(argv[11]);
+	K = atoi(argv[12]);
+	//steps = atoi(argv[13]);
+	st_time = atof(argv[13]);
+	en_time = atof(argv[14]);
+	movingobj = atoi(argv[15]);
+	restart = atoi(argv[16]);
+	restart_freq = atoi(argv[17]);
+#else
+	nx = atoi(argv[1]);
+	ny = atoi(argv[2]);
+	nz = atoi(argv[3]);
+	dt = atof(argv[4]);
+	g =  atof(argv[5]);
+	delta = atof(argv[6]);
+	nPerVoxel = atoi(argv[7]);
+	I = atoi(argv[8]);
+	J = atoi(argv[9]);
+	K = atoi(argv[10]);
+//	steps = atoi(argv[11]);
+	st_time = atof(argv[11]);
+	en_time = atof(argv[12]);
+	movingobj = atoi(argv[13]);
+	restart = atoi(argv[14]);
+	restart_freq = atoi(argv[15]);
+#endif
+	if(movingobj)
+		hasmovingobj = true;
+	//for waterfall nx=ny=nz=40
+//	int start_x0=5, start_y0=5, start_z0=5;
+//	int end_x0=29, end_y0=24, end_z0=25;
+
+	//for waterfall nx=120 ny=60 nz=80
+//	int start_x0=5, start_y0=5, start_z0=5;
+//	int end_x0=40, end_y0=24, end_z0=29;
+
+	//for waterfall nx=240 ny=120 nz=160
+//	int start_x0=5, start_y0=5, start_z0=5;
+//	int end_x0=80, end_y0=114, end_z0=98;
+
+	//for a pile and a source water nx=120 ny=60 nz=80
+//	int start_x0=5, start_y0=5, start_z0=5;
+//	int end_x0=114, end_y0=54, end_z0=15;
+
+	//for a pile and a source water nx=100 ny=60 nz=80
+//	int start_x0=5, start_y0=5, start_z0=5;
+//	int end_x0=94, end_y0=54, end_z0=15;
+
+	//for a source water only nx=50 ny=50 nz=130
+//	int start_x0=25, start_y0=25, start_z0=110;
+//	int end_x0=33, end_y0=33, end_z0=120;
+
+	//for a source water only nx=50 ny=50 nz=80
+//	int start_x0=25, start_y0=25, start_z0=60;
+//	int end_x0=33, end_y0=33, end_z0=70;
+
+	//for a source water only nx=80 ny=80 nz=120
+//	int start_x0=45, start_y0=45, start_z0=80;
+//	int end_x0=58, end_y0=58, end_z0=100;
+
+	//for a source water only nx=80 ny=80 nz=120
+	// source pours water onto the side wall
+//	int start_x0=25, start_y0=35, start_z0=95;
+//	int end_x0=40, end_y0=48, end_z0=108;
+
+	//for a source water only nx=48 ny=48 nz=120
+	// source pours water onto the side wall
+//	int start_x0=25, start_y0=25, start_z0=95;
+//	int end_x0=40, end_y0=40, end_z0=108;
+
+	//for a source water only nx=160 ny=160 nz=240
+	// source pours water onto the side wall
+//	int start_x0=50, start_y0=70, start_z0=190;
+//	int end_x0=80, end_y0=96, end_z0=216;
+
+	//for a ball falling nx=ny=nz=80
+//	int start_x0=5, start_y0=5, start_z0=5;
+//	int end_x0=114, end_y0=54, end_z0=39;
+
+	//for a ball falling nx=60 ny=30 nz=40
+//	int start_x0=5, start_y0=5, start_z0=5;
+//	int end_x0=54, end_y0=24, end_z0=19;
+
+	//for a ball falling nx=120 ny=60 nz=80
+//	int start_x0=5, start_y0=5, start_z0=5;
+//	int end_x0=114, end_y0=54, end_z0=35;
+
+	//for a ball falling nx=150 ny=100 nz=120
+//	int start_x0=5, start_y0=5, start_z0=5;
+//	int end_x0=144, end_y0=94, end_z0=45;
+
+    //for nx=ny=nz=40 and a source
+//	int start_x0=18, start_y0=18, start_z0=5;
+//	int end_x0=22, end_y0=22, end_z0=4;
+
+	//for nx=ny=nz=100
+//	int start_x0=60, start_y0=40, start_z0=10;
+//	int end_x0=79, end_y0=69, end_z0=79;
+
+//	VectorField3D u(nx+1,ny+1,nz+1);
+
+	Point p0(0,0,0), p1(nx,ny,nz);
+	nx = (int)round((p1-p0).x / delta);
+	ny = (int)round((p1-p0).y / delta);
+	nz = (int)round((p1-p0).z / delta);
+#ifdef SPMDMPI
+	init_mpi(argc, argv, pex, pey, nx, ny, nz);
+	if(!pid){
+#endif
+	printf("Dimensions: DimX = %d, DimY = %d, DimZ = %d \n ", nx, ny, nz);
+	printf("Paticle number for each cell = %d \n", nPerVoxel);
+#ifdef SPMDMPI
+		printf("comm_dir = %d \n ", comm_dir);
+		fflush(stdout);
+	}
+	printf("Dimensions: pid = %d, imt = %d, jmt = %d, kmt = %d, dt = %f, nPerCell = %d\n ",
+			pid, imt, jmt, kmt, dt, nPerVoxel);
+	fflush(stdout);
+#endif
+	Voxel voxel(p0, p1, delta);
+
+	int output_freq = 1;
+	if(dt < 0.04f){
+		float ratio = 0.04f / dt;
+//		printf("ratio = %f\n", ratio);
+		output_freq = int(round(ratio));
+	}
+
+#ifdef SPMDMPI
+	if(!pid){
+#endif
+	printf("Time step = %f \n",dt);
+	printf("frame data output every %d step \n ", output_freq);
+#ifdef SPMDMPI
+		fflush(stdout);
+	}
+#endif
+	int iters = int(round(LS_ADV_LIMIT / delta));
+//	TimeManager *tmg = new TimeManager(st_time, en_time, 4.9f, 20.f, iters, 10, 0.01f);
+
+	// use RK3_5th_WENO for level set advection
+//	TimeManager *tmg = new TimeManager(st_time, en_time, 4.9f, 20.f, iters);
+	// use semi-lagrangian for level set advection
+	TimeManager *tmg = new TimeManager(st_time, en_time, 4.9f, 20.f, iters);
+
+	Container *cube = new CubeContainer(voxel, nx, ny, nz, 0.f,
+			WALL_THICKNESS+1, WALL_THICKNESS+1, WALL_THICKNESS+1,
+			nx-(WALL_THICKNESS+1)-1,  ny-(WALL_THICKNESS+1)-1, nz-(WALL_THICKNESS+1)-1 //);
+			,objectfile);
+	Container *container = cube;
+
+//	Container *container = new CylinderContainer(voxel, nx, ny, nz, 0.f, Point(7.f, 7.f, 15.f),
+//	Container *cylinder = new CylinderContainer(voxel, nx, ny, nz, 0.f, Point(7.f, 7.f, 15.f),
+//										Vector(0, 0, 1), 6.f, 14.f);
+
+//	Container *container = new SignedDistanceContainer(objectfile, cylinder, nx, ny, nz, 0.f);
+//	Container *container = new SignedDistanceContainer(objectfile, cube, nx, ny, nz, 0.f);
+
+//	voxel.Initialize(cylinder);
+	voxel.Initialize(container);
+
+	PhysicsWorld *physWorld = new PhysicsWorld(p0, p1, nx, ny, nz);
+	physWorld->BuildPhysicsWorld("scene.desc", &voxel);
+
+//	container->BuilSignedDistanceMap(&voxel, physWorld);
+//	voxel.Initialize(container);
+
+	ScalarField3D  pressure(physWorld, nx, ny, nz, I, J, K);
+	RenderLevelSet foroutput(physWorld, nx, ny, nz, I, J, K);
+//	ScalarField3D waterphi(nx, ny, nz, I, J, K);
+	ScalarField3D object(physWorld, nx, ny, nz, I, J, K);
+
+#if !defined(COUPLED_SPH) && !defined(COUPLED_FLIP)
+	BlendParticles *waterSpray = new BlendParticles(nx, ny, nz, delta);
+#endif
+//	ScalarField3D outsideobject(nx, ny, nz, I, J, K);
+	WaveGenerator *wave = NULL;
+//			new WaveGenerator(80.5f, 0.2f, "framephi0020", "framevel0020");
+
+//	VectorField3D vel(nx, ny, nz, dt, g, 0.0f, hasmovingobj, container, I, J, K);
+	VectorField3D vel(physWorld, nx, ny, nz, tmg, g, 0.0f,
+			hasmovingobj, container, I, J, K, wave);
+
+	MovingObject *ball = NULL;
+//	MovingObject *cylinder = NULL;
+
+	if(movingobj){
+//		ball = new SphereMovingObject(voxel, nx, ny, nz,
+//			                                    20.25f, 15.25f, 25.f,
+//			                                    0.f, 0.f, -50.f,
+//			                                    2.5f, dt, delta, I, J, K);
+		//for waterfall nx=120 ny=60 nz=80
+//		ball = new SphereMovingObject(voxel, nx, ny, nz,
+//			                                    45.5f, 15.f, 7.0f,
+//			                                    0.f, 0.f, 0.f,
+//			                                    4.5f, dt, delta, I, J, K);
+		//for waterfall nx=240 ny=120 nz=160
+//		ball = new SphereMovingObject(voxel, nx, ny, nz,
+//		                                    45.5f, 15.f, 5.75f,
+//		                                    0.f, 0.f, 0.f,
+//		                                    4.5f, dt, delta, I, J, K);
+		//for waterfall nx=60 ny=30 nz=40
+//		ball = new SphereMovingObject(voxel, nx, ny, nz,
+//				                                  45.5f, 15.f, 9.5f,
+//				                                  0.f, 0.f, 0.f,
+//				                                 4.5f, dt, delta, I, J, K);
+
+//		ball = new SphereMovingObject(voxel, nx, ny, nz,
+//			                                    30.5f, 15.5f, 25.5f,
+//			                                    0.f, 0.f, -40.f,
+//			                                    2.5f, dt, delta, I, J, K);
+
+		//for a ball falling nx=120 ny=60 nz=80
+		ball = new SphereMovingObject(voxel, nx, ny, nz,
+                                    5.5f, 10.f, 12.25f,
+                                    17.5f, 0.f, -17.5f,
+                                    2.f, tmg, delta, 0.f, I, J, K);
+//		ball = new SphereMovingObject(voxel, nx, ny, nz,
+//		                              5.5f, 10.f, 12.0f,
+//		                              40.0f, 0.f, -40.f,
+//		                              2.f, dt, delta, 0.f, I, J, K);
+//		SphereMovingObject ball(voxel, nx, ny, nz,
+//		                       25.f, 25.f, 25.f,
+//		                       -0.1f, -0.1f, -5.f,
+//		                          1.5f, dt);
+		vel.AddMovingObject(ball);
+
+//		cylinder = new CylinderMovingObject(voxel, nx, ny, nz, 0.f,
+//										Point(6.f, 6.f, 15.f),
+//										Vector(0, 0, 1), 13.75f,
+//										0.f, 0.f, 0.f, 4.75f,
+//										dt, delta, I, J, K);
+//		vel.AddMovingObject(cylinder);
+	}
+    // cube source: x[20,30], y[28,32], z[38,42]
+//	CubeSource *cube = new CubeSource(voxel, 10, 25, 55, 30, 35, 65, nx, ny, nz, 10.f, delta);
+	// cube source: x[25,31], y[25,31], z[110,120]
+//	CubeSource *cube = new CubeSource(voxel, start_x0, start_y0, start_z0, end_x0, end_y0, end_z0,
+//								nx, ny, nz, -10.f, delta, 3, -1);
+
+//	 cube source: x[25,31], y[25,31], z[110,120]
+//	CubeSource *cube = new CubeSource(voxel, start_x0, start_y0, start_z0, end_x0, end_y0, end_z0,
+//								nx, ny, nz, 10.f, delta, 1, 1);
+
+	//for a ball falling nx=150 ny=100 nz=120
+	int start_x0=5, start_y0=5, start_z0=5;
+	int end_x0=15,   end_y0=194, end_z0=50;
+
+	CubeSource *cubesource = new CubeSource(voxel, start_x0, start_y0, start_z0, end_x0, end_y0, end_z0,
+								nx, ny, nz, I, J, K, 2.f, delta, 1, 1);
+
+	cubesource->UpdateVoxel(voxel);
+	vel.AddSourceObject(cubesource);
+	pressure.AddSourceObject(cubesource);
+
+	 // cylinder source:
+//	CylinderSource *cylindersource = new CylinderSource(voxel, Point(11.f, 7.f, 26.5f), Normalize(Vector(1.f, 0.f, -4.f)),
+//								nx, ny, nz, 1.5f, 2.f, I, J, K, 10.f);
+//	cylindersource->UpdateVoxel(voxel);
+//	vel.AddSourceObject(cylindersource);
+//	pressure.AddSourceObject(cylindersource);
+
+	vector<Particle> particles;
+//	list<Particle> negParticles;
+//	list<Particle> posParticles;
+//	list<WaterParticle> absorbedWaterParticles;
+
+	ParticleList negParticles;
+	ParticleList posParticles;
+	WaterParticleList absorbedWaterParticles;
+//	vector<Particle> negParticles;
+//	vector<Particle> posParticles;
+//	vector<WaterParticle> absorbedWaterParticles;
+
+	map<u_int, KnownPoint> band, negband;
+
+#ifdef COUPLED_SPH
+	SPH *sph = new SPH(delta, tmg, g, 0.5f, nx, ny, nz, I, J, K);
+	sph->ComputeTargetDensity(&voxel, nPerVoxel);
+#endif
+
+#ifdef COUPLED_FLIP
+	FLIP *flip = new FLIP(delta, tmg, g, 0.f, &object, nx, ny, nz, I, J, K);
+#endif
+
+	if(restart){
+
+		printf("Read in restart file [%s] ...\n", argv[15]);
+		FILE *fp = fopen(argv[15],"r");
+		int tmp_nx = nx;
+		int tmp_ny = ny;
+		int tmp_nz = nz;
+		fscanf(fp, "%d %d %d", &nx, &ny, &nz);
+		if(tmp_nx != nx || tmp_ny != ny || tmp_nz != nz){
+			printf("Error! Dimensions mismatch between commandline and restart file \n");
+			exit(1);
+		}
+		fscanf(fp, "%d", &restart_step);
+		restart_step++;
+		if(steps < restart_step){
+			printf("Error! steps less than restart step \n");
+			exit(1);
+		}
+		if(!pressure.ReadRestart(fp))
+			exit(1);
+		if(!vel.ReadRestart(fp))
+			exit(1);
+		fclose(fp);
+	}
+
+	else{
+		restart_step = 0;
+		//for(int i=0;i<totalParticles;i++)
+			//particle[i].Print(i);
+//		u_int totalParticles = particles.size();
+//		printf("Total Particles = %d \n ", totalParticles);
+
+//		printf("Evaluating Phi...\n");
+////		pressure.EvaluatePhi(particles, band, voxel);
+//		pressure.EvaluatePhi(voxel, start_x0, start_y0,  start_z0,
+//							end_x0,   end_y0,    end_z0);
+
+		/* for a pile of water */
+//		pressure.EvaluatePhiAirWater(voxel, start_x0, start_y0,  start_z0,
+//								end_x0,   end_y0,    end_z0);
+
+		/* for a pile of water and a source */
+//		pressure.EvaluatePhiAirWater(voxel, start_x0, start_y0,  start_z0,
+//								end_x0,   end_y0,    end_z0,
+//								10, 25, 55, 30, 35, 65);
+
+		/* for a source of water only */
+		pressure.EvaluatePhiAirWater(voxel, start_x0, start_y0,  start_z0,
+								end_x0,   end_y0,    end_z0);
+
+//		object.EvaluatePhi(voxel, WALL_THICKNESS+1, WALL_THICKNESS+1, WALL_THICKNESS+1,
+//				nx-(WALL_THICKNESS+1)-1,  ny-(WALL_THICKNESS+1)-1, nz-(WALL_THICKNESS+1)-1);
+//		object.EvaluatePhi(voxel, WALL_THICKNESS+1, WALL_THICKNESS+1, WALL_THICKNESS+1,
+//						nx-(WALL_THICKNESS+1)-1,  ny-(WALL_THICKNESS+1)-1, nz-(WALL_THICKNESS+1)-1);
+////		pressure.EvaluatePhi(voxel, Point(50,75,50), 15);
+//
+//		char* filename = "particle4";
+//		pressure.OutputGridData(voxel, filename);
+//		printf("Phi is outputed to [%s] \n", filename);
+
+//		particles.clear();
+
+//		printf("Phi Readin Started! \n");
+//		//char *filename = "100x100x100.dat";
+//		//char* filename = "40x40x40.dat";
+//		char *filename = "particle4";
+//		pressure.ReadinGridData(filename);
+//		printf("Phi Readin Finished! \n");
+//		pressure.ApplySourceTerm();
+
+//		printf("Object Levelset Initialization and Fast Marching Begins! \n");
+//		object.InitializeObject(voxel, band, negband);
+//		object.FastMarching(band, negband, voxel, true);
+//		printf("Object Levelset Initialization and  Fast Marching Finished! \n");
+
+//		object.CopyTo(outsideobject);
+
+		float *phi;
+		for(unsigned int i=0; i<4; ++i){
+			phi = container->GetScalarPhi(i);
+			vel.AssignPhiObject(phi,i);
+		}
+
+		if(!container->IsSignedDistance()){
+			vel.ReInitializeObject(voxel);
+			container->OutputBinaryGridData(objectfile);
+		}
+		// set the static object levelset
+		vel.FixedObjectBoundary();
+//		pressure.ApplySourceTerm();
+//		vel.ApplySourceTerm();
+//		pressure.ReInitialize(voxel, band, negband);
+		vel.UpdateObjectBoundary(voxel, true);
+		vel.ApplySourceTerm(voxel);
+		phi = container->GetScalarPhi(0);
+		object.CopyFrom(phi);
+//		object.OutputBinaryGridData(voxel, objectfile);
+
+//		pressure.InitializeFromWaveGen(wave, &voxel);
+//		vel.InitializeFromWaveGen(wave, &voxel);
+
+//		pressure.ReadBinaryGridData(initial_phi);
+
+		pressure.ApplySourceTerm(voxel, true);
+#ifdef SPMD
+		pressure.ReInitialize(voxel, object, true);
+#else
+		printf("Evaluating and Correcting Phi Begins ... \n");
+		pressure.Initialize(voxel, band, negband, object);
+		printf("Evaluating and Correcting Phi Finished! \n");
+		printf("Fast Marching Begins ...\n");
+		float *phi1 = pressure.getScalar();
+		pressure.FastMarchingAirWater(band, negband, voxel, true, phi1);
+		printf("Fast Marching Finished! \n");
+#endif
+		pressure.ExtrapolateIntoObject(voxel, object, true);
+		pressure.OutputBinaryGridData(voxel, initial_phi);
+
+		printf("Seeding Particles Begins ...\n");
+#ifdef POSITIVE_PARTICLES
+		pressure.SeedParticles(voxel, negParticles, posParticles, nPerVoxel);
+//		pressure.SeedParticles(voxel, object, negParticles, posParticles, nPerVoxel);
+#else
+		pressure.SeedParticles(voxel, negParticles, nPerVoxel);
+#endif
+		printf("Seeding Particles Finished! \n");
+
+		// do some initialization stuff for velocity field
+		phi = pressure.getScalar();
+		vel.AssignPhi(voxel, phi);
+		vel.UpdateVoxel(voxel);
+		vel.UpdateNonWaterVelocity(voxel);
+
+		tmg->AdvanceFrameTime();
+		tmg->AdvanceReSeedTime();
+		tmg->AdvanceSimulationTime(pressure.FindTimeStep(voxel, vel));
+		vel.UpdateTimeStep();
+	}
+
+	int m = 0;
+	char fr[6];
+	sprintf(fr, "f%d",m);
+	char fhead[16]= "phi.";
+	strcat(fhead, fr);
+	float *phis = pressure.getScalar();
+	foroutput.CopyFrom(phis);
+	foroutput.ResetObject(voxel, object);
+	foroutput.OutputBinaryGridData(voxel, fhead);
+	++m;
+
+	while(!tmg->Stop()){
+		tmg->Print();
+//		printf("\nm = %d \n\n", m);
+//		for(int k=0;k<nz;k++) {
+//			for(int j=0;j<ny;j++) {
+//				for(int i=0;i<nx;i++){
+//					if(voxel.InSurface(i,j,k))
+//						printf("Surface CELL i = %d, j = %d, k = %d \n", i, j, k);
+//				}
+//			}
+//		}
+#if 1
+		float delta = voxel.VoxelDelta();
+//		int iterations = int(round(LS_ADV_LIMIT / delta));
+//		float dts  = dt / iterations;
+//		float cfl = 0.f;
+//		while(pressure.CFLExceedsOne(voxel, vel, dts, &cfl)){
+//			dts /= 2;
+//			iterations *= 2;
+//		}
+		float dts = tmg->GetSubcyclingDt();
+		int iterations = tmg->GetSubcyclingIterations();
+		printf("\n Advection step with dts = %f, iters = %d \n\n", dts, iterations);
+		for(int n = 0; n < iterations; ++n){
+//			vel.AdvectForwardEulerSubcycling(voxel, dts, negParticles, -1);
+			vel.AdvectRK3Subcycling(voxel, dts, negParticles, -1);
+#ifdef POSITIVE_PARTICLES
+//			vel.AdvectForwardEulerSubcycling(voxel, dts, posParticles, 1);
+			vel.AdvectRK3Subcycling(voxel, dts, posParticles, 1);
+#endif
+#if !defined(COUPLED_SPH) && !defined(COUPLED_FLIP)
+			vel.AdvectSubcycling(voxel, dts, waterSpray->waterParticles);
+#endif
+		}
+
+			pressure.ExtrapolateIntoObject(voxel, object, true);
+			pressure.ApplySourceTerm(voxel, false);
+			pressure.RecomputeObjectLevelset(voxel, vel);
+			// use RK3_5th_WENO for level set advection
+//			pressure.AdvectSubcycling(voxel, dts, vel);
+			// use semi-lagrangian for level set advection
+			pressure.Advect(voxel, vel);
+//			pressure.ApplySourceTerm(voxel, false);
+			pressure.ExtrapolateIntoObject(voxel, object, false);
+#ifdef POSITIVE_PARTICLES
+			pressure.ErrorCorrection(voxel, negParticles, posParticles);
+#else
+			pressure.ErrorCorrection(voxel, negParticles);
+#endif
+
+			pressure.ApplySourceTerm(voxel, false);
+
+//		    if(m % output_freq == 0){
+//    			char fr[6];
+//    			sprintf(fr, "f%d",m/output_freq);
+//    			char fhead[16]= "phibr.";
+//    			strcat(fhead, fr);
+//    			pressure.CopyTo(foroutput);
+//    			foroutput.OutputBinaryGridData(voxel, fhead);
+//    		}
+
+#ifdef SPMD
+			pressure.ReInitialize(voxel, object, false);
+#else
+			pressure.ReInitialize(voxel, band, negband, object);
+#endif
+			pressure.ExtrapolateIntoObject(voxel, object, false);
+
+#ifdef POSITIVE_PARTICLES
+			pressure.ErrorCorrection(voxel, negParticles, posParticles);
+#else
+			pressure.ErrorCorrection(voxel, negParticles);
+#endif
+			pressure.ExtrapolateIntoObject(voxel, object, false);
+
+			// reseeding particles must be done before adjusting particle radii,
+			// because adjusting particle radii will make many particles having
+			// value = s_p*phi_i-radius = 0.f, such that these particles won't be
+			// deleted, resulting in too many non-escaped particles in a cell
+//			if( m % 20 == 0 && m > restart_step && n == iterations-1 ){
+//			if( tmg->TimeToReseed() && n == iterations-1){
+			if( tmg->TimeToReseed() ){
+//			if( m % 20 == 0 && m > restart_step ){
+				pressure.ExtrapolateIntoObject1(voxel, object, false);
+	//			pressure.ReSeedParticlesNew(voxel, object,
+	//					                 negParticles,
+	//#ifdef POSITIVE_PARTICLES
+	//					                 posParticles,
+	//#endif
+	//					                 nPerVoxel);
+				pressure.ReSeedParticles(voxel, object,
+										 negParticles,
+#ifdef POSITIVE_PARTICLES
+										 posParticles,
+#endif
+										 nPerVoxel);
+				tmg->AdvanceReSeedTime();
+			}
+
+			pressure.AdjustParticleRadii(voxel, vel,
+										0, iterations,
+										negParticles
+#ifdef POSITIVE_PARTICLES
+										,posParticles
+#endif
+#ifdef COUPLED_SPH
+										,sph
+#else
+#ifdef COUPLED_FLIP
+										,flip->mWaterParticles
+#else
+										,waterSpray
+#endif
+#endif
+										,absorbedWaterParticles);
+			//vel.AdjustVelocity(voxel, absorbedWaterParticles);
+//			waterSpray->Print();
+//	}
+#endif
+			if(tmg->TimeToOutputFrame()){
+				char fr[6];
+	//			sprintf(fr, "f%d",m/output_freq);
+				sprintf(fr, "f%d",m);
+				char fhead[16]= "phi.";
+				strcat(fhead, fr);
+//				pressure.CopyTo(foroutput);
+				float *phis = pressure.getScalar();
+				foroutput.CopyFrom(phis);
+
+	//			foroutput.MergeWithWaterParticles(waterSpray);
+		//		foroutput.OutputGridData(voxel, fhead);
+
+	//			char fspray[18]= "spray.";
+	//			strcat(fspray, fr);
+	//			waterSpray->EvaluatePhi(voxel);
+	////			waterphi.CopyFrom(waterSpray->phi);
+	////			waterphi.ReInitialize(voxel, band, negband, object);
+	////			foroutput.MergeWith(voxel, waterphi);
+	//			waterSpray->OutputBinaryGridData(voxel, fspray);
+
+				char fparticle[20]= "particles.";
+				strcat(fparticle, fr);
+#ifdef COUPLED_SPH
+				sph->OutputWaterParticlesBinary(&voxel, fparticle);
+#else
+#ifdef COUPLED_FLIP
+				flip->OutputWaterParticlesBinary(&voxel, fparticle);
+#else
+				waterSpray->OutputWaterParticlesBinary(voxel, fparticle);
+#endif
+#endif
+
+				foroutput.ResetObject(voxel, object);
+				foroutput.OutputBinaryGridData(voxel, fhead);
+				tmg->AdvanceFrameTime();
+				++m;
+			}
+//			if(m < 600){
+//				char fvel[16]= "vel.";
+//				strcat(fvel, fr);
+//				vel.OutputBindaryData(voxel, fvel);
+//			}
+				pressure.UpdateStatus(voxel);
+//				pressure.ReSeedSourceParticles(voxel, object,
+//											 negParticles,
+//#ifdef POSITIVE_PARTICLES
+//											 posParticles,
+//#endif
+//											 nPerVoxel);
+
+#if defined(COUPLED_SPH) || defined(COUPLED_FLIP)
+			vel.MomentumConservation(voxel, absorbedWaterParticles);
+#endif
+
+			float *phi = pressure.getScalar();
+#ifdef POSITIVE_PARTICLES
+			vel.TimeStepping(m, restart_step, voxel, phi, negParticles, posParticles);
+#else
+			vel.TimeStepping(m, restart_step, voxel, phi, negParticles);
+#endif
+			float *phiobj = container->GetScalarPhi(0);
+			object.CopyFrom(phiobj);
+			if(vel.HasMovingObject()){
+				pressure.ExtrapolateIntoObject1(voxel, object, false);
+#ifdef POSITIVE_PARTICLES
+				pressure.ErrorCorrection(voxel, negParticles, posParticles);
+#else
+				pressure.ErrorCorrection(voxel, negParticles);
+#endif
+			}
+
+			phi = pressure.getScalar();
+			vel.TimeStepping1(m, restart_step, voxel, phi);
+	//		vel.RecomputeObjectLevelset(voxel);
+#ifdef COUPLED_SPH
+			sph->TimeStepping(&voxel, &vel);
+			//printf("\n at (%d, %d, %d), Weights = %f \n\n", I, J, K,
+			//		ComputeSPHWeights(voxel, negParticles, I, J, K, 4*delta*delta, 1.5f*delta));
+#endif
+
+#ifdef COUPLED_FLIP
+			flip->TimeStepping(&voxel, &vel);
+//			vel.ConvertParticlesToLevelSet(voxel, flip->mWaterParticles,
+//							     		negParticles, nPerVoxel);
+#endif
+
+
+		if(tmg->simulTime > 8.f){
+			cubesource->Destroy(voxel);
+//			cylindersource->Destroy(voxel);
+		}
+		tmg->AdvanceSimulationTime(pressure.FindTimeStep(voxel, vel));
+		vel.UpdateTimeStep();
+
+
+//		char ribhead[16]= "phi.";
+//		char ribsuffix[5] = ".rib";
+//		strcat(ribhead, fr);
+//		strcat(ribhead, ribsuffix);
+//		foroutput.ConstructMesh(voxel);
+//		foroutput.OutputGridDataRib(ribhead);
+//		foroutput.DestroyMesh();
+
+	}
+	vel.PrintMaxVelocity();
+
+	if(movingobj){
+		delete ball;
+//		delete cylinder;
+	}
+	delete cube;
+#ifdef COUPLED_SPH
+	delete sph;
+#endif
+#ifdef COUPLED_FLIP
+	delete flip;
+#endif
+//	delete cylindersource;
+#if !defined(COUPLED_SPH) && !defined(COUPLED_FLIP)
+	if(waterSpray)
+		delete waterSpray;
+#endif
+//	delete cylinder;
+//	delete container;
+	delete cubesource;
+	delete tmg;
+	delete physWorld;
+	if(wave)
+		delete wave;
+	return 0;
+}
+
+void SpecifyVolume(int start_x0, int start_y0, int start_z0,
+				   int end_x0, int end_y0, int end_z0,
+				   int nPerVoxel, const Voxel &voxel,
+				   vector<Particle> &particles){
+	int i,j,k,m;
+
+	for(j=start_y0;j<=end_y0;j++)
+		for(i=start_x0;i<=end_x0;i++){
+			//top
+			for(k=end_z0;k<end_z0+1;k++){
+				//KnownPoint tmpb(i,j,k);
+				//band.insert(make_pair(k*(nx*ny)+j*nx+i, tmpb));
+				for(m=0;m<nPerVoxel;m++){
+					Particle p;
+					voxel.PlaceParticles(i, j, k, p, 6);
+					particles.push_back(p);
+				}
+			}
+			//bottom
+			for(k=start_z0;k<start_z0+1;k++){
+//				KnownPoint tmpb(i,j,k);
+//				band.insert(make_pair(k*(nx*ny)+j*nx+i, tmpb));
+				for(m=0;m<nPerVoxel;m++){
+					Particle p;
+					voxel.PlaceParticles(i, j, k, p, 5);
+					particles.push_back(p);
+				}
+			}
+		}
+
+	for(k=start_z0;k<=end_z0;k++)
+		for(j=start_y0;j<=end_y0;j++){
+			//left
+			for(i=start_x0;i<start_x0+1;i++){
+//				KnownPoint tmpb(i,j,k);
+//				band.insert(make_pair(k*(nx*ny)+j*nx+i, tmpb));
+				for(m=0;m<nPerVoxel;m++){
+					Particle p;
+					voxel.PlaceParticles(i, j, k, p, 1);
+					particles.push_back(p);
+				}
+			}
+			//right
+			for(i=end_x0;i<end_x0+1;i++){
+//				KnownPoint tmpb(i,j,k);
+//				band.insert(make_pair(k*(nx*ny)+j*nx+i, tmpb));
+				for(m=0;m<nPerVoxel;m++){
+					Particle p;
+					voxel.PlaceParticles(i, j, k, p, 2);
+					particles.push_back(p);
+				}
+			}
+		}
+
+	for(k=start_z0;k<=end_z0;k++)
+		for(i=start_x0;i<=end_x0;i++){
+			//front
+			for(j=start_y0;j<start_y0+1;j++){
+//				KnownPoint tmpb(i,j,k);
+//				band.insert(make_pair(k*(nx*ny)+j*nx+i, tmpb));
+				for(m=0;m<nPerVoxel;m++){
+					Particle p;
+					voxel.PlaceParticles(i, j, k, p, 3);
+					particles.push_back(p);
+				}
+			}
+			//back
+			for(j=end_y0;j<end_y0+1;j++){
+//				KnownPoint tmpb(i,j,k);
+//				band.insert(make_pair(k*(nx*ny)+j*nx+i, tmpb));
+				for(m=0;m<nPerVoxel;m++){
+					Particle p;
+					voxel.PlaceParticles(i, j, k, p, 4);
+					particles.push_back(p);
+				}
+			}
+		}
+}
+
+/*static struct FloatPair{
+	FloatPair(){
+		nFoundParticles = 0;
+		smallestR = INFINITY;
+		value = INFINITY;
+	}
+	mutable vector<Particle> foundParticles;
+	mutable u_int nFoundParticles;
+	mutable float smallestR, value;
+	void operator()(const Particle &p,
+					 float distSquare,
+					 float &maxDistSquared) const{
+		foundParticles.push_back(p);
+		nFoundParticles++;
+		float dist = sqrt(distSquare);
+		if( dist <= smallestR){
+			smallestR = dist;
+			value = smallestR;
+		}
+		return;
+	}
+	bool Empty() const{
+		return foundParticles.empty();
+	}
+	u_int Size() const {
+		return (unsigned int)foundParticles.size();
+	}
+	void Clear(){
+		nFoundParticles = 0;
+		smallestR = INFINITY;
+		value = INFINITY;
+		foundParticles.clear();
+	}
+};
+
+float ComputeSPHWeights(const Voxel &voxel, list<Particle> &sph, int i, int j, int k,
+						float radiusSquared, float influenceRadius){
+
+	list<Particle>::iterator iter_particle;
+	vector<Particle> wp;
+	list<Particle> &sphParticles = sph;
+	for(iter_particle = sphParticles.begin();
+		iter_particle != sphParticles.end();
+		){
+			Particle &wps = *iter_particle;
+			wp.push_back(wps);
+			++iter_particle;
+	}
+	KdTree<Particle, FloatPair> dist(wp);
+	FloatPair fp;
+
+	Point p = voxel.VoxelCenterPosition(i,j,k);
+	dist.Lookup(p, fp, radiusSquared);
+    float totalWeight = 0.f;
+    u_int N = fp.nFoundParticles;
+    if(N > 0){
+    	for(int n=0; n < N; ++n){
+			Particle &wps = fp.foundParticles[n];
+			totalWeight += wps.Influence(p, influenceRadius);
+		}
+    }
+    return totalWeight;
+}*/
+

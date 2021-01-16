@@ -1,0 +1,15 @@
+#LookAt 125 125 100   0 0 30   0 0 1
+#LookAt -60 20 30   40 20 30   0 0 1
+#for 40x40x40
+#LookAt 20 80 80   20 20 20   0 0 1
+#for 80x80x80
+#LookAt 20 100 80   20 20 20   0 0 1
+#LookAt 30 70 80   30 20 20   0 0 1
+#LookAt 25 70 80   25 20 20   0 0 1
+#LookAt 12.5 50 50   12.5 20 20   0 0 1
+LookAt 10.0 45 40   10 20 20   0 0 1
+#LookAt 20 100 20   20 20 20   0 0 1
+#for 100x100x100
+#LookAt 55 220 100   55 0 30   0 0 1
+Camera "perspective" "float fov" [30]
+Film "image" 

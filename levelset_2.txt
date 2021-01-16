@@ -1,0 +1,80 @@
+	"integer xresolution" [684] "integer yresolution" [513]
+
+Sampler "lowdiscrepancy" "integer pixelsamples" [4] # [1024] # [64]
+
+PixelFilter "box"
+
+SurfaceIntegrator "directlighting"
+#SurfaceIntegrator "path" "integer maxdepth" [2]
+#SurfaceIntegrator "photonmap" "integer causticphotons" [0]
+#	"integer indirectphotons" [200000]
+#	"integer directphotons" [100000]
+#	"integer nfilter" [0] "integer finalgathersamples" [64]
+#	    "bool finalgather" ["true"] "integer nused" [100]
+#   "bool directwithphotons" ["false"] "float maxdist" [.5]
+
+WorldBegin
+AttributeBegin
+Material "matte" "color Kd" [0 0 0]
+AreaLightSource "area"  "color L" [10 10 10] "integer nsamples" [16]
+Translate 0 0 800
+ReverseOrientation
+Shape "disk" "float radius" [300]
+AttributeEnd
+
+#AttributeBegin
+#LightSource "skylight" "float longitude" [0] "float latitude" [20] "float turbidity" [2]
+#	"integer nsamples" [16] "float timeofday" [12.5] "integer sm" [0] "integer jd" [120]
+#AttributeEnd
+
+#AttributeBegin
+#LightSource "sunlight" "float longitude" [0] "float latitude" [20] "float turbidity" [2]
+#	"integer nsamples" [16] "float timeofday" [12.5] "integer sm" [0] "integer jd" [120]
+#AttributeEnd	
+
+AttributeBegin
+  Material "matte" "color Kd" [.5 .5 .5]
+  Translate 0 0 -140
+#Texture "grid" "color" "imagemap" "string filename" ["textures/lines.exr"]
+#Texture "grid" "color" "imagemap" "string filename" ["textures/ALCC01.exr"]
+#Texture "bump" "float" "imagemap" "string filename" ["textures/ALCC01BUMP.exr"]
+Texture "grid" "color" "imagemap" "string filename" ["../../textures/office-carpets.exr"]
+Texture "bump" "float" "imagemap" "string filename" ["../../textures/officecarpetsbump.exr"]
+Texture "sgrid" "color" "scale" "texture tex1" "grid" "color tex2" [ .5 .5 .5 ]
+Material "matte" "texture Kd" "grid" "texture bumpmap" "bump"
+Shape "trianglemesh" "point P" [ -400 -400 0 400 -400 0 400 400 0 -400 400 0 ]
+      "float uv" [ 0 0 5 0 5 5 0 5 ]
+	"integer indices" [ 0 1 2 2 3 0]
+Shape "trianglemesh" "point P" [ -400 -400 0 400 -400 0 
+	400 -400  1000 -400 -400 1000 ]
+      "float uv" [ 0 0 5 0 5 5 0 5 ]
+	"integer indices" [ 0 1 2 2 3 0]
+Shape "trianglemesh" "point P" [ -400 -400 0 -400 400 0  -400 400 1000 -400 -400 1000 ]
+      "float uv" [ 0 0 5 0 5 5 0 5 ]
+	"integer indices" [ 0 1 2 2 3 0]
+Shape "trianglemesh" "point P" [ -400 400 0 400 400 0 
+	400 400  1000 -400 400 1000 ]
+      "float uv" [ 0 0 5 0 5 5 0 5 ]
+	"integer indices" [ 0 1 2 2 3 0]
+Shape "trianglemesh" "point P" [ 400 -400 0 400 400 0  400 400 1000 400 -400 1000 ]
+      "float uv" [ 0 0 5 0 5 5 0 5 ]
+	"integer indices" [ 0 1 2 2 3 0]
+
+AttributeEnd
+AttributeBegin
+#Translate 45.5 15.0 7.0
+#Translate 45.5 15.0 9.5
+Translate 45.5 15.0 5.75
+	Material "plastic" "color Kd" [.1 .1 .8] "color Ks" [.5 .5 .5]
+#Shape "sphere" "float radius" 4.5
+AttributeEnd
+AttributeBegin
+    #Material "substrate" "color Kd" [.03 .03 .03] "color Ks" [.5 .5 .5]
+	#"float uroughness" [.03] "float vroughness" [.03] 
+	#Material "matte" "color Kd" [.1 .1 .8] 
+	Material "plastic" "color Kd" [.8 .1 .1] "color Ks" [.7 .7 .7]
+	#Material "glass" "color Kr" [.8 .8 .8] "color Kt" [.8 .8 .8]
+        #            "float index" [1.333]
+#Translate 0 -100 -70
+#Rotate 60 1 0 0
+
